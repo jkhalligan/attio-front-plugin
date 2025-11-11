@@ -9,7 +9,7 @@ import {
 } from './types';
 
 const ATTIO_CONFIG: AttioApiConfig = {
-  apiKey: '87f9f373fea53dd315baafcae5fdc0c79c9885fb6a2705d5d69ec47a151d8096',
+  apiKey: import.meta.env.VITE_ATTIO_API_KEY,
   baseUrl: 'https://api.attio.com/v2',
 };
 
