@@ -32,7 +32,7 @@ function App() {
     fromEmail: null,
   });
 
-  const isDebugMode = new URLSearchParams(window.location.search).get('debug') === 'true';
+  // const isDebugMode = new URLSearchParams(window.location.search).get('debug') === 'true';
 
   const getFromEmail = async (): Promise<string | null> => {
     if (context?.type !== 'singleConversation') return null;
