@@ -398,7 +398,7 @@ export async function createDeal(data: {
   // Add stage if provided
   if (data.stage_id) {
     const [_workspaceId, _objectId, _attributeId, _statusId] = data.stage_id.split('|');
-    values.stage = [{ status: statusId }];
+    values.stage = [{ status: _statusId }];
   }
 
   if (data.description) {
