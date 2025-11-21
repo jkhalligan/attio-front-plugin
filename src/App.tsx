@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { useFrontContext } from './providers/FrontContext';
 import { PersonCard } from './components/PersonCard';
@@ -35,9 +35,9 @@ function App() {
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   
   // Track the current conversation ID to detect changes
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const currentConversationIdRef = useRef<string | null>(null);
 
-  const getConversationParticipants = async (): Promise<ConversationParticipant[]> => {
+  const getConversationParticipants = useCallback(async (): Promise<ConversationParticipant[]> => {
     if (context?.type !== 'singleConversation') return [];
     
     try {
@@ -57,8 +57,30 @@ function App() {
           });
         }
         
-        // Add recipients
-        message.recipients?.forEach(recipient => {
+        // Add "To" recipients
+        message.to?.forEach(recipient => {
+          if (recipient.handle && !emailMap.has(recipient.handle)) {
+            emailMap.set(recipient.handle, {
+              email: recipient.handle,
+              name: recipient.name || recipient.handle,
+              isFirstSender: false,
+            });
+          }
+        });
+        
+        // Add CC recipients
+        message.cc?.forEach(recipient => {
+          if (recipient.handle && !emailMap.has(recipient.handle)) {
+            emailMap.set(recipient.handle, {
+              email: recipient.handle,
+              name: recipient.name || recipient.handle,
+              isFirstSender: false,
+            });
+          }
+        });
+        
+        // Add BCC recipients (optional, might want to exclude these)
+        message.bcc?.forEach(recipient => {
           if (recipient.handle && !emailMap.has(recipient.handle)) {
             emailMap.set(recipient.handle, {
               email: recipient.handle,
@@ -76,39 +98,60 @@ function App() {
         return a.name.localeCompare(b.name);
       });
       
+      console.log('👥 All participants (including CC/BCC):', participantList.map(p => `${p.name} <${p.email}>`));
+      
       return participantList;
     } catch (error) {
       console.error('Error getting conversation participants:', error);
       return [];
     }
-  };
+  }, [context]);
 
-  const loadData = async (emailToLoad?: string) => {
-    if (context?.type !== 'singleConversation') return;
+  const loadData = useCallback(async (emailToLoad?: string, forceReload = false) => {
+    if (context?.type !== 'singleConversation') {
+      console.log('❌ Not a single conversation, skipping load');
+      return;
+    }
 
-    console.log('🚀 Starting to load Attio data...');
+    console.log('🚀 Starting to load Attio data...', { emailToLoad, forceReload });
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      // If no email specified, use the selected email or get participants
-      let targetEmail = emailToLoad || selectedEmail;
+      // Get participants list
+      const participantList = await getConversationParticipants();
       
-      if (!targetEmail) {
-        const participantList = await getConversationParticipants();
-        setParticipants(participantList);
-        
-        if (participantList.length === 0) {
-          setState(prev => ({
-            ...prev,
-            loading: false,
-            error: 'Could not extract email from conversation',
-            fromEmail: null,
-          }));
-          return;
-        }
-        
-        // Default to first participant (the original sender)
+      if (participantList.length === 0) {
+        console.log('❌ No participants found');
+        setState(prev => ({
+          ...prev,
+          loading: false,
+          error: 'Could not extract email from conversation',
+          fromEmail: null,
+        }));
+        setParticipants([]);
+        setSelectedEmail(null);
+        return;
+      }
+      
+      // Update participants list
+      setParticipants(participantList);
+      
+      // Determine which email to load
+      let targetEmail = emailToLoad;
+      
+      // If no email specified and we're force reloading (new conversation), use first participant
+      if (!targetEmail && forceReload) {
         targetEmail = participantList[0].email;
+        setSelectedEmail(targetEmail);
+      } 
+      // If no email specified and not force reloading, use current selection or first participant
+      else if (!targetEmail) {
+        targetEmail = selectedEmail || participantList[0].email;
+        if (!selectedEmail) {
+          setSelectedEmail(targetEmail);
+        }
+      } else {
+        // Email was specified, update selection
         setSelectedEmail(targetEmail);
       }
 
@@ -121,7 +164,7 @@ function App() {
       const person = await searchPersonByEmail(targetEmail);
 
       if (!person) {
-        console.log('❌ No person found in Attio');
+        console.log('❌ No person found in Attio for:', targetEmail);
         const [companies, dealStages] = await Promise.all([companiesPromise, dealStagesPromise]);
         setState(prev => ({
           ...prev,
@@ -216,12 +259,13 @@ function App() {
         error: error instanceof Error ? error.message : 'Failed to load data',
       }));
     }
-  };
+  }, [context, getConversationParticipants, selectedEmail]);
 
-  const handleContactChange = (email: string) => {
+  const handleContactChange = useCallback((email: string) => {
+    console.log('🔄 Contact changed to:', email);
     setSelectedEmail(email);
-    loadData(email);
-  };
+    loadData(email, false);
+  }, [loadData]);
 
   // Effect to handle conversation changes and initial load
   useEffect(() => {
@@ -229,11 +273,16 @@ function App() {
       const conversationId = context.conversation.id;
       
       // Check if this is a new conversation
-      if (conversationId !== currentConversationId) {
-        console.log('🔄 Conversation changed, resetting state...', conversationId);
+      if (conversationId !== currentConversationIdRef.current) {
+        console.log('🔄 Conversation changed!', {
+          previous: currentConversationIdRef.current,
+          new: conversationId
+        });
+        
+        // Update the ref immediately
+        currentConversationIdRef.current = conversationId;
         
         // Reset all state for new conversation
-        setCurrentConversationId(conversationId);
         setSelectedEmail(null);
         setParticipants([]);
         setState({
@@ -247,16 +296,27 @@ function App() {
           fromEmail: null,
         });
         
-        // Load data for new conversation
-        loadData();
+        // Load data for new conversation with force reload flag
+        loadData(undefined, true);
       }
     } else {
       // Reset when no conversation or multiple conversations
-      setCurrentConversationId(null);
+      console.log('🔄 No single conversation selected, resetting...');
+      currentConversationIdRef.current = null;
       setSelectedEmail(null);
       setParticipants([]);
+      setState({
+        loading: false,
+        error: null,
+        person: null,
+        company: null,
+        deals: [],
+        companies: [],
+        dealStages: [],
+        fromEmail: null,
+      });
     }
-  }, [context]);
+  }, [context, loadData]);
 
   if (contextLoading) {
     return (
@@ -333,7 +393,7 @@ function App() {
       )}
 
       {!state.loading && !state.person && state.fromEmail && (
-        <CreatePersonCard email={state.fromEmail} onCreated={loadData} />
+        <CreatePersonCard email={state.fromEmail} onCreated={() => loadData(undefined, true)} />
       )}
 
       {state.person && (
@@ -342,13 +402,13 @@ function App() {
             <PersonCard
               person={state.person}
               companies={state.companies}
-              onUpdate={loadData}
+              onUpdate={() => loadData(undefined, true)}
             />
           </Accordion>
 
           {state.company && (
             <Accordion title="Company" defaultOpen={false}>
-              <CompanyCard company={state.company} onUpdate={loadData} />
+              <CompanyCard company={state.company} onUpdate={() => loadData(undefined, true)} />
             </Accordion>
           )}
 
@@ -361,7 +421,7 @@ function App() {
               dealStages={state.dealStages}
               personId={state.person?.id?.record_id || null}
               companyId={state.company?.id?.record_id || null}
-              onUpdate={loadData}
+              onUpdate={() => loadData(undefined, true)}
             />
           </Accordion>
         </>
