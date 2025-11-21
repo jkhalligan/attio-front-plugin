@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { useFrontContext } from './providers/FrontContext';
 import { PersonCard } from './components/PersonCard';
 import { CompanyCard } from './components/CompanyCard';
 import { DealsSection } from './components/DealsSection';
 import { CreatePersonCard } from './components/CreatePersonCard';
-import { Accordion } from './components/Accordion'; // ✅ Added accordion import
-// import { DebugPanel } from './components/DebugPanel';
-// import { DebugInspector } from './components/DebugInspector';
+import { Accordion } from './components/Accordion';
 import {
   searchPersonByEmail,
   getCompany,
@@ -16,7 +14,7 @@ import {
   getDealsForCompany,
   getDealStages,
 } from './attioApi';
-import { PluginState } from './types';
+import { PluginState, ConversationParticipant } from './types';
 import './App.css';
 
 function App() {
@@ -31,48 +29,93 @@ function App() {
     dealStages: [],
     fromEmail: null,
   });
+  
+  // New state for contact selection
+  const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
 
-  // const isDebugMode = new URLSearchParams(window.location.search).get('debug') === 'true';
-
-  const getFromEmail = async (): Promise<string | null> => {
-    if (context?.type !== 'singleConversation') return null;
+  const getConversationParticipants = async (): Promise<ConversationParticipant[]> => {
+    if (context?.type !== 'singleConversation') return [];
+    
     try {
       const messagesResponse = await context.listMessages();
-      if (messagesResponse.results.length === 0) return null;
-      const firstMessage = messagesResponse.results[0];
-      return firstMessage.from.handle;
+      if (messagesResponse.results.length === 0) return [];
+      
+      // Collect all unique email addresses from the conversation
+      const emailMap = new Map<string, ConversationParticipant>();
+      
+      messagesResponse.results.forEach((message, index) => {
+        // Add sender
+        if (message.from.handle && !emailMap.has(message.from.handle)) {
+          emailMap.set(message.from.handle, {
+            email: message.from.handle,
+            name: message.from.name || message.from.handle,
+            isFirstSender: index === 0, // Mark the first sender
+          });
+        }
+        
+        // Add recipients
+        message.recipients?.forEach(recipient => {
+          if (recipient.handle && !emailMap.has(recipient.handle)) {
+            emailMap.set(recipient.handle, {
+              email: recipient.handle,
+              name: recipient.name || recipient.handle,
+              isFirstSender: false,
+            });
+          }
+        });
+      });
+      
+      // Convert to array and sort: first sender first, then alphabetically
+      const participantList = Array.from(emailMap.values()).sort((a, b) => {
+        if (a.isFirstSender) return -1;
+        if (b.isFirstSender) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      return participantList;
     } catch (error) {
-      console.error('Error getting from email:', error);
-      return null;
+      console.error('Error getting conversation participants:', error);
+      return [];
     }
   };
 
-  const loadData = async () => {
+  const loadData = async (emailToLoad?: string) => {
     if (context?.type !== 'singleConversation') return;
 
     console.log('🚀 Starting to load Attio data...');
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const fromEmail = await getFromEmail();
-      console.log('📧 From email:', fromEmail);
-
-      if (!fromEmail) {
-        setState(prev => ({
-          ...prev,
-          loading: false,
-          error: 'Could not extract email from conversation',
-          fromEmail: null,
-        }));
-        return;
+      // If no email specified, use the selected email or get participants
+      let targetEmail = emailToLoad || selectedEmail;
+      
+      if (!targetEmail) {
+        const participantList = await getConversationParticipants();
+        setParticipants(participantList);
+        
+        if (participantList.length === 0) {
+          setState(prev => ({
+            ...prev,
+            loading: false,
+            error: 'Could not extract email from conversation',
+            fromEmail: null,
+          }));
+          return;
+        }
+        
+        // Default to first participant (the original sender)
+        targetEmail = participantList[0].email;
+        setSelectedEmail(targetEmail);
       }
 
-      setState(prev => ({ ...prev, fromEmail }));
+      console.log('📧 Loading contact for email:', targetEmail);
+      setState(prev => ({ ...prev, fromEmail: targetEmail }));
 
       const companiesPromise = listCompanies();
       const dealStagesPromise = getDealStages();
-      console.log('🔍 Searching for person with email:', fromEmail);
-      const person = await searchPersonByEmail(fromEmail);
+      console.log('🔍 Searching for person with email:', targetEmail);
+      const person = await searchPersonByEmail(targetEmail);
 
       if (!person) {
         console.log('❌ No person found in Attio');
@@ -172,6 +215,11 @@ function App() {
     }
   };
 
+  const handleContactChange = (email: string) => {
+    setSelectedEmail(email);
+    loadData(email);
+  };
+
   useEffect(() => {
     if (context?.type === 'singleConversation') loadData();
   }, [context]);
@@ -195,7 +243,6 @@ function App() {
           <h2 style={styles.emptyTitle}>No Conversation Selected</h2>
           <p style={styles.emptyText}>Select a conversation to view Attio CRM details</p>
         </div>
-        {/* {isDebugMode && <DebugPanel context={context} />} */}
       </div>
     );
   }
@@ -208,19 +255,34 @@ function App() {
           <h2 style={styles.emptyTitle}>Multiple Conversations Selected</h2>
           <p style={styles.emptyText}>Please select only one conversation to use this plugin</p>
         </div>
-        {/* {isDebugMode && <DebugPanel context={context} />} */}
       </div>
     );
   }
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        {/* <h1 style={styles.headerTitle}>Attio CRM</h1> */}
-        {/* {state.fromEmail && (
-          <p style={styles.headerSubtitle}>Contact: {state.fromEmail}</p>
-        )} */}
-      </div>
+      {/* Contact Selector Dropdown - Only show if we have multiple participants */}
+      {participants.length > 1 && (
+        <div style={styles.selectorContainer}>
+          <label style={styles.selectorLabel}>Viewing contact:</label>
+          <div style={styles.selectWrapper}>
+            <select
+              value={selectedEmail || ''}
+              onChange={(e) => handleContactChange(e.target.value)}
+              style={styles.select}
+              disabled={state.loading}
+            >
+              {participants.map((participant) => (
+                <option key={participant.email} value={participant.email}>
+                  {participant.name}
+                  {participant.isFirstSender && ' (Original Sender)'}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={16} style={styles.selectIcon} />
+          </div>
+        </div>
+      )}
 
       {state.loading && (
         <div style={styles.loadingBanner}>
@@ -235,16 +297,6 @@ function App() {
           <span>{state.error}</span>
         </div>
       )}
-
-      {/* DEBUG MODE BLOCK COMMENTED OUT */}
-      {/*
-      {!state.loading && state.person && (
-        <div style={styles.debugSection}>
-          <h2 style={styles.debugTitle}>🐛 Debug Data Inspector</h2>
-          ...
-        </div>
-      )}
-      */}
 
       {!state.loading && !state.person && state.fromEmail && (
         <CreatePersonCard email={state.fromEmail} onCreated={loadData} />
@@ -280,8 +332,6 @@ function App() {
           </Accordion>
         </>
       )}
-
-      {/* {isDebugMode && <DebugPanel context={context} />} */}
     </div>
   );
 }
@@ -293,11 +343,49 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '16px',
     overflowX: 'hidden',
   },
-  header: {
-    // marginBottom: '20px',
-    // paddingBottom: '16px',
-    // borderBottom: '2px solid var(--border-color)',
+  selectorContainer: {
+    marginBottom: '16px',
+    padding: '12px',
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: '8px',
+    border: '1px solid var(--border-color)',
   },
+  selectorLabel: {
+    display: 'block',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    marginBottom: '8px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  selectWrapper: {
+    position: 'relative',
+    width: '100%',
+  },
+  select: {
+    width: '100%',
+    padding: '8px 32px 8px 12px',
+    fontSize: '14px',
+    fontWeight: 500,
+    color: 'var(--text-primary)',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-color)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    appearance: 'none',
+    outline: 'none',
+    transition: 'all 0.2s ease',
+  },
+  selectIcon: {
+    position: 'absolute',
+    right: '10px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    pointerEvents: 'none',
+    color: 'var(--text-tertiary)',
+  },
+  header: {},
   headerTitle: {
     margin: '0 0 4px 0',
     fontSize: '20px',

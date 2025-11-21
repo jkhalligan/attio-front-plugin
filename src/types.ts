@@ -162,6 +162,13 @@ export interface PluginState {
   fromEmail: string | null;
 }
 
+// Conversation Participant Type
+export interface ConversationParticipant {
+  email: string;
+  name: string;
+  isFirstSender: boolean;
+}
+
 // Form Types
 export interface PersonFormData {
   name: string;
