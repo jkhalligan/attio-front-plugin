@@ -33,6 +33,9 @@ function App() {
   // New state for contact selection
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  
+  // Track the current conversation ID to detect changes
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
 
   const getConversationParticipants = async (): Promise<ConversationParticipant[]> => {
     if (context?.type !== 'singleConversation') return [];
@@ -220,8 +223,39 @@ function App() {
     loadData(email);
   };
 
+  // Effect to handle conversation changes and initial load
   useEffect(() => {
-    if (context?.type === 'singleConversation') loadData();
+    if (context?.type === 'singleConversation') {
+      const conversationId = context.conversation.id;
+      
+      // Check if this is a new conversation
+      if (conversationId !== currentConversationId) {
+        console.log('🔄 Conversation changed, resetting state...', conversationId);
+        
+        // Reset all state for new conversation
+        setCurrentConversationId(conversationId);
+        setSelectedEmail(null);
+        setParticipants([]);
+        setState({
+          loading: false,
+          error: null,
+          person: null,
+          company: null,
+          deals: [],
+          companies: [],
+          dealStages: [],
+          fromEmail: null,
+        });
+        
+        // Load data for new conversation
+        loadData();
+      }
+    } else {
+      // Reset when no conversation or multiple conversations
+      setCurrentConversationId(null);
+      setSelectedEmail(null);
+      setParticipants([]);
+    }
   }, [context]);
 
   if (contextLoading) {
