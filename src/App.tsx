@@ -19,6 +19,10 @@ import './App.css';
 
 function App() {
   const { context, loading: contextLoading } = useFrontContext();
+  
+  // Debug flag - set to false for production
+  const DEBUG = true;
+  
   const [state, setState] = useState<PluginState>({
     loading: false,
     error: null,
@@ -36,6 +40,60 @@ function App() {
   
   // Track the current conversation ID to detect changes
   const currentConversationIdRef = useRef<string | null>(null);
+  
+  // Cache for static/slow-changing data
+  const companiesCache = useRef<{ data: any[] | null; timestamp: number }>({ data: null, timestamp: 0 });
+  const dealStagesCache = useRef<{ data: any[] | null; timestamp: number }>({ data: null, timestamp: 0 });
+  const dealsCache = useRef<{ data: any[] | null; timestamp: number }>({ data: null, timestamp: 0 });
+  
+  // Cache duration: 5 minutes for companies/stages, 30 seconds for deals
+  const CACHE_DURATION_STATIC = 5 * 60 * 1000; // 5 minutes
+  const CACHE_DURATION_DEALS = 30 * 1000; // 30 seconds
+
+  // Helper to get cached companies or fetch fresh
+  const getCachedCompanies = useCallback(async () => {
+    const now = Date.now();
+    if (companiesCache.current.data && (now - companiesCache.current.timestamp) < CACHE_DURATION_STATIC) {
+      if (DEBUG) console.log('📦 Using cached companies');
+      return companiesCache.current.data;
+    }
+    
+    if (DEBUG) console.log('🔄 Fetching fresh companies...');
+    const companies = await listCompanies();
+    companiesCache.current = { data: companies, timestamp: now };
+    return companies;
+  }, [DEBUG]);
+
+  // Helper to get cached deal stages or fetch fresh
+  const getCachedDealStages = useCallback(async () => {
+    const now = Date.now();
+    if (dealStagesCache.current.data && (now - dealStagesCache.current.timestamp) < CACHE_DURATION_STATIC) {
+      if (DEBUG) console.log('📦 Using cached deal stages');
+      return dealStagesCache.current.data;
+    }
+    
+    if (DEBUG) console.log('🔄 Fetching fresh deal stages...');
+    const stages = await getDealStages();
+    dealStagesCache.current = { data: stages, timestamp: now };
+    return stages;
+  }, [DEBUG]);
+
+  // Helper to get cached deals or fetch fresh
+  const getCachedDeals = useCallback(async () => {
+    const now = Date.now();
+    if (dealsCache.current.data && (now - dealsCache.current.timestamp) < CACHE_DURATION_DEALS) {
+      if (DEBUG) console.log('📦 Using cached deals (' + dealsCache.current.data.length + ' deals)');
+      return dealsCache.current.data;
+    }
+    
+    if (DEBUG) console.log('🔄 Fetching ALL deals (will cache for 30s)...');
+    // Fetch all deals once - the existing getDealsForPerson already does this
+    // We're just caching the result
+    const deals = await getDealsForPerson('_all_');
+    dealsCache.current = { data: deals, timestamp: now };
+    if (DEBUG) console.log('📦 Cached ' + deals.length + ' deals');
+    return deals;
+  }, [DEBUG]);
 
   const getConversationParticipants = useCallback(async (): Promise<ConversationParticipant[]> => {
     if (context?.type !== 'singleConversation') return [];
@@ -91,14 +149,22 @@ function App() {
         });
       });
       
-      // Convert to array and sort: first sender first, then alphabetically
-      const participantList = Array.from(emailMap.values()).sort((a, b) => {
+      // Convert to array and filter out avenirthinking.com addresses
+      let participantList = Array.from(emailMap.values());
+      
+      // Filter out avenirthinking.com email addresses
+      participantList = participantList.filter(p => 
+        !p.email.toLowerCase().endsWith('@avenirthinking.com')
+      );
+      
+      // Sort: first sender first, then alphabetically
+      participantList.sort((a, b) => {
         if (a.isFirstSender) return -1;
         if (b.isFirstSender) return 1;
         return a.name.localeCompare(b.name);
       });
       
-      console.log('👥 All participants (including CC/BCC):', participantList.map(p => `${p.name} <${p.email}>`));
+      if (DEBUG) console.log('👥 All participants (excluding avenirthinking.com):', participantList.map(p => `${p.name} <${p.email}>`));
       
       return participantList;
     } catch (error) {
@@ -109,19 +175,24 @@ function App() {
 
   const loadData = useCallback(async (emailToLoad?: string, forceReload = false) => {
     if (context?.type !== 'singleConversation') {
-      console.log('❌ Not a single conversation, skipping load');
+      if (DEBUG) console.log('❌ Not a single conversation, skipping load');
       return;
     }
 
-    console.log('🚀 Starting to load Attio data...', { emailToLoad, forceReload });
+    if (DEBUG) console.log('🚀 Starting to load Attio data...', { emailToLoad, forceReload });
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      // Get participants list
-      const participantList = await getConversationParticipants();
+      // Only fetch participants on force reload (new conversation) or if not already loaded
+      let participantList = participants;
+      if (forceReload || participants.length === 0) {
+        participantList = await getConversationParticipants();
+      } else {
+        if (DEBUG) console.log('📦 Using existing participants list');
+      }
       
       if (participantList.length === 0) {
-        console.log('❌ No participants found');
+        if (DEBUG) console.log('❌ No participants found');
         setState(prev => ({
           ...prev,
           loading: false,
@@ -133,38 +204,39 @@ function App() {
         return;
       }
       
-      // Update participants list
-      setParticipants(participantList);
+      // Update participants list only if changed
+      if (forceReload || participants.length === 0) {
+        setParticipants(participantList);
+      }
       
       // Determine which email to load
       let targetEmail = emailToLoad;
       
-      // If no email specified and we're force reloading (new conversation), use first participant
       if (!targetEmail && forceReload) {
         targetEmail = participantList[0].email;
         setSelectedEmail(targetEmail);
       } 
-      // If no email specified and not force reloading, use current selection or first participant
       else if (!targetEmail) {
         targetEmail = selectedEmail || participantList[0].email;
         if (!selectedEmail) {
           setSelectedEmail(targetEmail);
         }
       } else {
-        // Email was specified, update selection
         setSelectedEmail(targetEmail);
       }
 
-      console.log('📧 Loading contact for email:', targetEmail);
+      if (DEBUG) console.log('📧 Loading contact for email:', targetEmail);
       setState(prev => ({ ...prev, fromEmail: targetEmail }));
 
-      const companiesPromise = listCompanies();
-      const dealStagesPromise = getDealStages();
-      console.log('🔍 Searching for person with email:', targetEmail);
+      // Use cached companies and deal stages
+      const companiesPromise = getCachedCompanies();
+      const dealStagesPromise = getCachedDealStages();
+      
+      if (DEBUG) console.log('🔍 Searching for person with email:', targetEmail);
       const person = await searchPersonByEmail(targetEmail);
 
       if (!person) {
-        console.log('❌ No person found in Attio for:', targetEmail);
+        if (DEBUG) console.log('❌ No person found in Attio for:', targetEmail);
         const [companies, dealStages] = await Promise.all([companiesPromise, dealStagesPromise]);
         setState(prev => ({
           ...prev,
@@ -178,7 +250,7 @@ function App() {
         return;
       }
 
-      console.log('✅ Person found! Record ID:', person?.id?.record_id);
+      if (DEBUG) console.log('✅ Person found! Record ID:', person?.id?.record_id);
       if (!person?.id?.record_id) {
         console.error('❌ Person found but invalid ID structure:', person);
         setState(prev => ({
@@ -203,27 +275,62 @@ function App() {
         person.values.companies?.[0]?.referenced_record_id ||
         person.values.companies?.[0]?.target_record_id;
 
-      console.log('🏢 Company ID from person:', companyId);
+      if (DEBUG) console.log('🏢 Company ID from person:', companyId);
 
-      const [companies, dealStages, dealsForPerson] = await Promise.all([
+      // Get all deals from cache once, then filter client-side for both person and company
+      const [companies, dealStages, allDeals] = await Promise.all([
         companiesPromise,
         dealStagesPromise,
-        getDealsForPerson(person.id.record_id),
+        getCachedDeals(),
       ]);
+
+      // Filter deals for this person
+      const dealsForPerson = allDeals.filter(deal => {
+        if (!deal || !deal.values) return false;
+        const personAttributes = ['associated_people', 'people', 'person', 'contacts', 'contact', 'primary_contact'];
+        for (const attr of personAttributes) {
+          const values = deal.values[attr];
+          if (Array.isArray(values)) {
+            for (const value of values) {
+              const refId = value?.target_record_id || value?.referenced_record_id || value?.record_id;
+              if (refId === person.id.record_id) {
+                return true;
+              }
+            }
+          }
+        }
+        return false;
+      });
 
       let company = null;
       let dealsForCompany: any[] = [];
       if (companyId) {
-        console.log('🏢 Loading company:', companyId);
-        [company, dealsForCompany] = await Promise.all([
-          getCompany(companyId),
-          getDealsForCompany(companyId),
-        ]);
-        console.log('💼 Deals found for company:', dealsForCompany.length);
+        if (DEBUG) console.log('🏢 Loading company:', companyId);
+        company = await getCompany(companyId);
+        
+        // Filter deals for this company from the same cached list
+        dealsForCompany = allDeals.filter(deal => {
+          if (!deal || !deal.values) return false;
+          const companyAttributes = ['associated_company', 'company', 'companies', 'organization', 'organizations'];
+          for (const attr of companyAttributes) {
+            const values = deal.values[attr];
+            if (Array.isArray(values)) {
+              for (const value of values) {
+                const refId = value?.target_record_id || value?.referenced_record_id || value?.record_id;
+                if (refId === companyId) {
+                  return true;
+                }
+              }
+            }
+          }
+          return false;
+        });
+        
+        if (DEBUG) console.log('💼 Deals found for company:', dealsForCompany.length);
       }
 
-      const allDeals = [...dealsForPerson, ...dealsForCompany];
-      const validDeals = allDeals.filter(deal => deal && deal.id && deal.id.record_id);
+      const combinedDeals = [...dealsForPerson, ...dealsForCompany];
+      const validDeals = combinedDeals.filter(deal => deal && deal.id && deal.id.record_id);
       const uniqueDeals = Array.from(
         new Map(validDeals.map(deal => [deal.id.record_id, deal])).values()
       );
@@ -238,7 +345,7 @@ function App() {
         }
       });
 
-      console.log('✅ Total unique deals:', uniqueDeals.length);
+      if (DEBUG) console.log('✅ Total unique deals:', uniqueDeals.length);
 
       setState(prev => ({
         ...prev,
@@ -250,7 +357,7 @@ function App() {
         dealStages,
       }));
 
-      console.log('✅ Data loading complete!');
+      if (DEBUG) console.log('✅ Data loading complete!');
     } catch (error) {
       console.error('❌ Error loading data:', error);
       setState(prev => ({
@@ -259,13 +366,13 @@ function App() {
         error: error instanceof Error ? error.message : 'Failed to load data',
       }));
     }
-  }, [context, getConversationParticipants, selectedEmail]);
+  }, [context, getConversationParticipants, getCachedCompanies, getCachedDealStages, getCachedDeals, selectedEmail, participants, DEBUG]);
 
   const handleContactChange = useCallback((email: string) => {
-    console.log('🔄 Contact changed to:', email);
+    if (DEBUG) console.log('🔄 Contact changed to:', email);
     setSelectedEmail(email);
     loadData(email, false);
-  }, [loadData]);
+  }, [loadData, DEBUG]);
 
   // Effect to handle conversation changes and initial load
   useEffect(() => {
@@ -274,10 +381,12 @@ function App() {
       
       // Check if this is a new conversation
       if (conversationId !== currentConversationIdRef.current) {
-        console.log('🔄 Conversation changed!', {
-          previous: currentConversationIdRef.current,
-          new: conversationId
-        });
+        if (DEBUG) {
+          console.log('🔄 Conversation changed!', {
+            previous: currentConversationIdRef.current,
+            new: conversationId
+          });
+        }
         
         // Update the ref immediately
         currentConversationIdRef.current = conversationId;
@@ -299,9 +408,10 @@ function App() {
         // Load data for new conversation with force reload flag
         loadData(undefined, true);
       }
-    } else {
-      // Reset when no conversation or multiple conversations
-      console.log('🔄 No single conversation selected, resetting...');
+    } else if (currentConversationIdRef.current !== null) {
+      // Only reset when transitioning FROM a conversation TO no conversation
+      // This prevents infinite loop by only running once when going from conversation to null
+      if (DEBUG) console.log('🔄 No single conversation selected, resetting...');
       currentConversationIdRef.current = null;
       setSelectedEmail(null);
       setParticipants([]);
@@ -316,7 +426,7 @@ function App() {
         fromEmail: null,
       });
     }
-  }, [context, loadData]);
+  }, [context, loadData, DEBUG]);
 
   if (contextLoading) {
     return (

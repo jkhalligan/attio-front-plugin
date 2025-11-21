@@ -326,9 +326,14 @@ export async function getDealsForPerson(personId: string): Promise<AttioDeal[]> 
     console.log(`ðŸ“Š Retrieved ${response.data.length} total deals, filtering client-side...`);
     
     // Filter deals client-side
-    const relatedDeals = response.data.filter(deal => isDealRelatedToPerson(deal, personId));
-    
-    console.log(`âœ… Found ${relatedDeals.length} deals related to person ${personId}`);
+    let relatedDeals: AttioDeal[];
+    if (personId === '_all_') {
+      console.log('Returning all deals (no filtering)');
+      relatedDeals = response.data;
+    } else {
+      relatedDeals = response.data.filter(deal => isDealRelatedToPerson(deal, personId));
+      console.log(`Found ${relatedDeals.length} deals related to person ${personId}`);
+    }
     
     // Filter out any invalid deals
     const validDeals = relatedDeals.filter(deal => 
