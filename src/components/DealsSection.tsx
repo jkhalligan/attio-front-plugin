@@ -1,4 +1,4 @@
-import { TrendingUp, Plus, Save, X } from 'lucide-react';
+import { TrendingUp, Plus, Save, X, Circle, CircleDashed, CheckCircle } from 'lucide-react';
 import { useState } from 'react';
 import { createDeal } from '../attioApi';
 
@@ -83,6 +83,31 @@ const getDealStageName = (deal: any, dealStages: any[]): string => {
   if (stageData.value) return stageData.value;
   if (stageData.option_id) return `Stage ${stageData.option_id.substring(0, 8)}`;
   return 'Unknown Stage';
+};
+
+// Helper function to get billing status
+const getBillingStatus = (deal: any): 'none' | 'partial' | 'billed' => {
+  const billingData = deal?.values?.billing_status?.[0];
+  
+  // No billing data at all
+  if (!billingData) return 'none';
+  
+  // Check for option_id in nested structure (most common for select fields)
+  const optionId = 
+    billingData.option?.id?.option_id ||  // Nested structure: option.id.option_id
+    billingData.option_id ||               // Direct option_id
+    billingData.status_id;                 // Alternative: status_id
+  
+  if (optionId === 'd807ffb1-fc06-4492-afe6-8c57af5e8af8') return 'billed';
+  if (optionId === '6090cbbf-6caa-4207-bc38-9bb607c4d4e2') return 'partial';
+  
+  // Check for title/text match (fallback)
+  const title = billingData.option?.title || billingData.status?.title || billingData.value || '';
+  const titleLower = title.toLowerCase();
+  if (titleLower.includes('billed') && !titleLower.includes('partial')) return 'billed';
+  if (titleLower.includes('partial')) return 'partial';
+  
+  return 'none';
 };
 
 export const DealsSection: React.FC<DealsSectionProps> = ({
@@ -313,6 +338,7 @@ export const DealsSection: React.FC<DealsSectionProps> = ({
               const dealName = getDealName(deal);
               const dealValue = getDealValue(deal);
               const stageName = getDealStageName(deal, dealStages);
+              const billingStatus = getBillingStatus(deal);
               const isWon = isDealWon(deal);
               const closeDate = getCloseDate(deal);
               const webUrl = deal?.web_url;
@@ -334,13 +360,39 @@ export const DealsSection: React.FC<DealsSectionProps> = ({
                   </div>
 
                   <div style={styles.dealFooter}>
-                    <div
-                      style={{
-                        ...styles.dealStage,
-                        ...(isWon ? styles.dealStageWon : {}),
-                      }}
-                    >
-                      {isWon ? `Won 🎉` : stageName}
+                    <div style={styles.statusLabels}>
+                      <div
+                        style={{
+                          ...styles.dealStage,
+                          ...(isWon ? styles.dealStageWon : {}),
+                        }}
+                      >
+                        {isWon ? `Won 🎉` : stageName}
+                      </div>
+
+                      {/* Billing Status Label */}
+                      <div
+                        style={{
+                          ...styles.billingStatus,
+                          ...(billingStatus === 'billed' ? styles.billingStatusBilled : {}),
+                          ...(billingStatus === 'partial' ? styles.billingStatusPartial : {}),
+                          ...(billingStatus === 'none' ? styles.billingStatusNone : {}),
+                        }}
+                        title={
+                          billingStatus === 'billed' ? 'Fully Billed' :
+                          billingStatus === 'partial' ? 'Partially Billed' :
+                          'Not Billed'
+                        }
+                      >
+                        {billingStatus === 'billed' && <CheckCircle size={12} />}
+                        {billingStatus === 'partial' && <CircleDashed size={12} />}
+                        {billingStatus === 'none' && <Circle size={12} />}
+                        <span>
+                          {billingStatus === 'billed' ? 'Billed' :
+                           billingStatus === 'partial' ? 'Partial' :
+                           'Not Billed'}
+                        </span>
+                      </div>
                     </div>
 
                     {closeDate && !isWon && (
@@ -457,6 +509,12 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
     gap: '8px',
   },
+  statusLabels: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    flexWrap: 'wrap',
+  },
   dealStage: {
     display: 'inline-block',
     padding: '4px 8px',
@@ -470,6 +528,30 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: '#d1fae5',
     color: '#065f46',
     borderColor: '#10b981',
+  },
+  billingStatus: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '4px 8px',
+    fontSize: '12px',
+    borderRadius: '4px',
+    border: '1px solid var(--border-color)',
+  },
+  billingStatusNone: {
+    backgroundColor: 'var(--bg-secondary)',
+    color: 'var(--text-tertiary)',
+    borderColor: 'var(--border-color)',
+  },
+  billingStatusPartial: {
+    backgroundColor: '#fef3c7',
+    color: '#92400e',
+    borderColor: '#f59e0b',
+  },
+  billingStatusBilled: {
+    backgroundColor: '#dbeafe',
+    color: '#1e40af',
+    borderColor: '#3b82f6',
   },
   closeDate: {
     fontSize: '11px',
