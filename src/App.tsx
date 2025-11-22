@@ -201,7 +201,7 @@ function App() {
         setState(prev => ({
           ...prev,
           loading: false,
-          error: 'Could not extract email from conversation',
+          error: 'No external emails found',
           fromEmail: null,
         }));
         setParticipants([]);
@@ -664,8 +664,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '8px',
     padding: '12px 16px',
-    backgroundColor: 'var(--error-color)',
-    color: 'white',
+    backgroundColor: 'var(--bg-secondary)',
+    color: 'var(--text-primary)',
     borderRadius: '8px',
     marginBottom: '16px',
     fontSize: '14px',
