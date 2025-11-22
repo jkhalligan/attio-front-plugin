@@ -406,8 +406,9 @@ export async function createDeal(data: {
     values.stage = [{ status: _statusId }];
   }
 
+  // Use the actual api_slug from your Attio workspace for Deal Description
   if (data.description) {
-    values.description = [{ value: data.description }];
+    values['04505832daed879fe923ad014df38d443b455070_1762381282'] = [{ value: data.description }];
   }
 
   if (data.person_id) {

@@ -89,6 +89,26 @@ const getDealStageName = (deal: any, dealStages: any[]): string => {
   return 'Unknown Stage';
 };
 
+// Helper function to check if deal is in "Lost" stage
+const isDealLost = (deal: any, dealStages: any[]): boolean => {
+  const stageData = deal?.values?.stage?.[0];
+  if (!stageData) return false;
+  
+  // Get the status_id from the stage data
+  const statusId = stageData.status?.id?.status_id || stageData.status_id;
+  if (!statusId) return false;
+  
+  // Find the matching stage in dealStages
+  const stage = dealStages.find(
+    (s: any) =>
+      s.id?.status_id === statusId ||
+      s.status_id === statusId
+  );
+  
+  // Check if the stage title is "Lost"
+  return stage?.title?.toLowerCase() === 'lost';
+};
+
 // Helper function to get billing status
 const getBillingStatus = (deal: any): 'none' | 'partial' | 'billed' => {
   const billingData = deal?.values?.billing_status?.[0];
@@ -217,7 +237,9 @@ export const DealsSection = forwardRef<DealsSectionRef, DealsSectionProps>(({
   // 1. Open deals first (no close_date or future date)
   // 2. Then closed deals (past close_date)
   // 3. Within each, sort by close_date descending
-  const sortedDeals = [...deals].sort((a, b) => {
+  const sortedDeals = [...deals]
+    .filter(deal => !isDealLost(deal, dealStages)) // Filter out Lost deals
+    .sort((a, b) => {
     const aClose = getCloseDate(a);
     const bClose = getCloseDate(b);
 
@@ -423,7 +445,7 @@ export const DealsSectionNewButton = ({ onClick, disabled }: { onClick: () => vo
       border: 'none',
       padding: '4px',
       cursor: disabled ? 'default' : 'pointer',
-      color: 'var(--text-secondary)',
+      color: disabled ? 'var(--text-secondary)' : '#2563EB',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
