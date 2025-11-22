@@ -3,10 +3,14 @@ import { ChevronRight } from "lucide-react";
 
 export function Accordion({
   title,
+  icon,
+  headerActions,
   defaultOpen = false,
   children,
 }: {
   title: string;
+  icon?: React.ReactNode;
+  headerActions?: React.ReactNode;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
@@ -14,22 +18,33 @@ export function Accordion({
 
   return (
     <div style={styles.accordion}>
-      <button
+      <div
         style={{
           ...styles.header,
           backgroundColor: open ? "var(--bg-tertiary)" : "transparent",
         }}
-        onClick={() => setOpen(!open)}
       >
-        <span>{title}</span>
-        <ChevronRight
-          size={14}
-          style={{
-            transform: open ? "rotate(90deg)" : "rotate(0deg)",
-            transition: "transform 0.2s ease",
-          }}
-        />
-      </button>
+        <button
+          style={styles.headerButton}
+          onClick={() => setOpen(!open)}
+        >
+          {icon && <span style={styles.icon}>{icon}</span>}
+          <span>{title}</span>
+          <ChevronRight
+            size={14}
+            style={{
+              transform: open ? "rotate(90deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}
+          />
+        </button>
+        
+        {headerActions && (
+          <div style={styles.headerActions} onClick={(e) => e.stopPropagation()}>
+            {headerActions}
+          </div>
+        )}
+      </div>
 
       <div
         style={{
@@ -60,12 +75,31 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     width: "100%",
     padding: "10px 14px",
+  },
+  headerButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flex: 1,
     fontSize: "14px",
     fontWeight: 600,
     color: "var(--text-primary)",
     cursor: "pointer",
     border: "none",
     background: "none",
+    padding: 0,
+    textAlign: "left",
+  },
+  icon: {
+    display: "flex",
+    alignItems: "center",
+    color: "var(--text-secondary)",
+  },
+  headerActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexShrink: 0,
   },
   body: {
     padding: "8px",

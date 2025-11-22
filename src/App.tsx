@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Loader2, AlertCircle, ChevronDown } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronDown, User, Building2, TrendingUp } from 'lucide-react';
 import { useFrontContext } from './providers/FrontContext';
-import { PersonCard } from './components/PersonCard';
-import { CompanyCard } from './components/CompanyCard';
-import { DealsSection } from './components/DealsSection';
+import { PersonCard, PersonCardEditButton, PersonCardRef } from './components/PersonCard';
+import { CompanyCard, CompanyCardEditButton, CompanyCardRef } from './components/CompanyCard';
+import { DealsSection, DealsSectionNewButton, DealsSectionRef } from './components/DealsSection';
 import { CreatePersonCard } from './components/CreatePersonCard';
 import { Accordion } from './components/Accordion';
 import {
@@ -37,6 +37,11 @@ function App() {
   // New state for contact selection
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  
+  // Refs for card components to trigger their edit/create functions
+  const personCardRef = useRef<PersonCardRef>(null);
+  const companyCardRef = useRef<CompanyCardRef>(null);
+  const dealsSectionRef = useRef<DealsSectionRef>(null);
   
   // Track the current conversation ID to detect changes
   const currentConversationIdRef = useRef<string | null>(null);
@@ -508,25 +513,50 @@ function App() {
 
       {state.person && (
         <>
-          <Accordion title="Contact Details" defaultOpen={true}>
+          <Accordion 
+            title="Contact Details" 
+            icon={<User size={16} />}
+            defaultOpen={true}
+            headerActions={
+              <PersonCardEditButton onClick={() => personCardRef.current?.startEditing()} />
+            }
+          >
             <PersonCard
+              ref={personCardRef}
               person={state.person}
+              company={state.company}
               companies={state.companies}
               onUpdate={() => loadData(undefined, true)}
             />
           </Accordion>
 
           {state.company && (
-            <Accordion title="Company" defaultOpen={false}>
-              <CompanyCard company={state.company} onUpdate={() => loadData(undefined, true)} />
+            <Accordion 
+              title="Company" 
+              icon={<Building2 size={16} />}
+              defaultOpen={false}
+              headerActions={
+                <CompanyCardEditButton onClick={() => companyCardRef.current?.startEditing()} />
+              }
+            >
+              <CompanyCard 
+                ref={companyCardRef}
+                company={state.company} 
+                onUpdate={() => loadData(undefined, true)} 
+              />
             </Accordion>
           )}
 
           <Accordion
             title={`Deals (${state.deals.length})`}
+            icon={<TrendingUp size={16} />}
             defaultOpen={false}
+            headerActions={
+              <DealsSectionNewButton onClick={() => dealsSectionRef.current?.startCreating()} />
+            }
           >
             <DealsSection
+              ref={dealsSectionRef}
               deals={state.deals}
               dealStages={state.dealStages}
               personId={state.person?.id?.record_id || null}

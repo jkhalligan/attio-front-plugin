@@ -1,5 +1,5 @@
-import { TrendingUp, Plus, Save, X, Circle, CircleDashed, CheckCircle } from 'lucide-react';
-import { useState } from 'react';
+import { TrendingUp, Plus, Save, X, Circle, CircleDashed, CheckCircle, Edit2 } from 'lucide-react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { createDeal } from '../attioApi';
 
 interface DealsSectionProps {
@@ -8,6 +8,10 @@ interface DealsSectionProps {
   personId: string | null;
   companyId: string | null;
   onUpdate: () => void;
+}
+
+export interface DealsSectionRef {
+  startCreating: () => void;
 }
 
 // Helper function to safely get deal name
@@ -110,13 +114,13 @@ const getBillingStatus = (deal: any): 'none' | 'partial' | 'billed' => {
   return 'none';
 };
 
-export const DealsSection: React.FC<DealsSectionProps> = ({
+export const DealsSection = forwardRef<DealsSectionRef, DealsSectionProps>(({
   deals,
   dealStages,
   personId,
   companyId,
   onUpdate,
-}) => {
+}, ref) => {
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +131,11 @@ export const DealsSection: React.FC<DealsSectionProps> = ({
     stage_id: '',
     description: '',
   });
+  
+  // Expose the create function to parent via ref
+  useImperativeHandle(ref, () => ({
+    startCreating: handleCreate
+  }));
 
   const handleCreate = () => {
     setFormData({
@@ -227,24 +236,6 @@ export const DealsSection: React.FC<DealsSectionProps> = ({
 
   return (
     <div style={styles.card}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <TrendingUp size={20} style={styles.icon} />
-          <h3 style={styles.title}>Deals</h3>
-          <span style={styles.count}>({sortedDeals.length})</span>
-        </div>
-        {!isCreating && (
-          <button
-            onClick={handleCreate}
-            style={styles.addButton}
-            title="Create new deal"
-          >
-            <Plus size={16} />
-            <span>New Deal</span>
-          </button>
-        )}
-      </div>
-
       <div style={styles.content}>
         {error && (
           <div style={styles.error}>{error}</div>
@@ -420,7 +411,31 @@ export const DealsSection: React.FC<DealsSectionProps> = ({
       </div>
     </div>
   );
-};
+});
+
+// Export helper function to render New Deal button (pencil icon) for accordion header
+export const DealsSectionNewButton = ({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      background: 'none',
+      border: 'none',
+      padding: '4px',
+      cursor: disabled ? 'default' : 'pointer',
+      color: 'var(--text-secondary)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '4px',
+      transition: 'background-color 0.2s',
+      opacity: disabled ? 0.5 : 1,
+    }}
+    title="Create new deal"
+  >
+    <Edit2 size={16} />
+  </button>
+);
 
 const styles: Record<string, React.CSSProperties> = {
   card: {

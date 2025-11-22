@@ -1,10 +1,14 @@
 import { Building2, ExternalLink, Edit2, Save, X } from 'lucide-react';
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { updateCompany } from '../attioApi';
 
 interface CompanyCardProps {
   company: any;
   onUpdate: () => void;
+}
+
+export interface CompanyCardRef {
+  startEditing: () => void;
 }
 
 // Helper function to safely get company name
@@ -31,7 +35,7 @@ const getCompanyDescription = (company: any): string | null => {
   return description || null;
 };
 
-export const CompanyCard: React.FC<CompanyCardProps> = ({ company, onUpdate }) => {
+export const CompanyCard = forwardRef<CompanyCardRef, CompanyCardProps>(({ company, onUpdate }, ref) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +49,11 @@ export const CompanyCard: React.FC<CompanyCardProps> = ({ company, onUpdate }) =
   const [formData, setFormData] = useState({
     domain: domain || '',
   });
+  
+  // Expose the edit function to parent via ref
+  useImperativeHandle(ref, () => ({
+    startEditing: handleEdit
+  }));
 
   const handleEdit = () => {
     setFormData({
@@ -79,24 +88,6 @@ export const CompanyCard: React.FC<CompanyCardProps> = ({ company, onUpdate }) =
 
   return (
     <div style={styles.card}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <Building2 size={20} style={styles.icon} />
-          <h3 style={styles.title}>Company</h3>
-        </div>
-        <div style={styles.headerRight}>
-          {!isEditing && (
-            <button
-              onClick={handleEdit}
-              style={styles.iconButton}
-              title="Edit company"
-            >
-              <Edit2 size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
       <div style={styles.content}>
         {error && (
           <div style={styles.error}>{error}</div>
@@ -159,7 +150,19 @@ export const CompanyCard: React.FC<CompanyCardProps> = ({ company, onUpdate }) =
           <>
             <div style={styles.field}>
               <div style={styles.fieldLabel}>Name</div>
-              <div style={styles.fieldValue}>{companyName}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={styles.fieldValue}>{companyName}</span>
+                {webUrl && (
+                  <a
+                    href={webUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={styles.inlineViewLink}
+                  >
+                    View →
+                  </a>
+                )}
+              </div>
             </div>
 
             {domain && (
@@ -189,24 +192,36 @@ export const CompanyCard: React.FC<CompanyCardProps> = ({ company, onUpdate }) =
                 </div>
               </div>
             )}
-
-            {webUrl && (
-              <a
-                href={webUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={styles.linkButton}
-              >
-                <ExternalLink size={14} />
-                <span>View in Attio</span>
-              </a>
-            )}
           </>
         )}
       </div>
     </div>
   );
-};
+});
+
+// Export helper function to render edit button for accordion header
+export const CompanyCardEditButton = ({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      background: 'none',
+      border: 'none',
+      padding: '4px',
+      cursor: disabled ? 'default' : 'pointer',
+      color: 'var(--text-secondary)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '4px',
+      transition: 'background-color 0.2s',
+      opacity: disabled ? 0.5 : 1,
+    }}
+    title="Edit company"
+  >
+    <Edit2 size={16} />
+  </button>
+);
 
 const styles: Record<string, React.CSSProperties> = {
   card: {
@@ -267,6 +282,12 @@ const styles: Record<string, React.CSSProperties> = {
   fieldValue: {
     fontSize: '14px',
     color: 'var(--text-primary)',
+  },
+  inlineViewLink: {
+    fontSize: '12px',
+    color: 'var(--accent-color)',
+    textDecoration: 'none',
+    fontWeight: 500,
   },
   fieldNote: {
     fontSize: '11px',

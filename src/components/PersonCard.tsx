@@ -1,11 +1,16 @@
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { User, Mail, Phone, Briefcase, Building2, Edit2, ExternalLink, Save, X } from 'lucide-react';
 import { updatePerson } from '../attioApi';
 
 interface PersonCardProps {
   person: any;
+  company: any;
   companies: any[];
   onUpdate: () => void;
+}
+
+export interface PersonCardRef {
+  startEditing: () => void;
 }
 
 // Helper function to safely get person's full name
@@ -55,20 +60,32 @@ const getPersonCompanyId = (person: any): string | null => {
 };
 
 // Helper function to get company name from the person's company reference
-const getCompanyName = (person: any, companyRecord: any): string => {
-  // First try to get it from the passed company record
-  if (companyRecord?.values?.name?.[0]?.value) {
-    return companyRecord.values.name[0].value;
+const getCompanyName = (person: any, company: any, companies: any[]): string => {
+  // First priority: use the actual company record passed from App
+  if (company?.values?.name?.[0]?.value) {
+    return company.values.name[0].value;
   }
   
-  if (companyRecord?.record_text) {
-    return companyRecord.record_text;
+  if (company?.record_text) {
+    return company.record_text;
   }
   
-  return 'Unknown Company';
+  // Fallback: search in companies array
+  const companyId = getPersonCompanyId(person);
+  if (companyId && companies) {
+    const foundCompany = companies.find(c => c.id.record_id === companyId);
+    if (foundCompany?.values?.name?.[0]?.value) {
+      return foundCompany.values.name[0].value;
+    }
+    if (foundCompany?.record_text) {
+      return foundCompany.record_text;
+    }
+  }
+  
+  return 'Linked to company';
 };
 
-export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpdate }) => {
+export const PersonCard = forwardRef<PersonCardRef, PersonCardProps>(({ person, company, companies, onUpdate }, ref) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +105,11 @@ export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpd
     job_title: jobTitle || '',
     company_id: companyId || '',
   });
+  
+  // Expose the edit function to parent via ref
+  useImperativeHandle(ref, () => ({
+    startEditing: handleEdit
+  }));
 
   const handleEdit = () => {
     // Reset form data when entering edit mode
@@ -136,24 +158,6 @@ export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpd
 
   return (
     <div style={styles.card}>
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <User size={20} style={styles.icon} />
-          <h3 style={styles.title}>Contact Details</h3>
-        </div>
-        <div style={styles.headerRight}>
-          {!isEditing && (
-            <button
-              onClick={handleEdit}
-              style={styles.iconButton}
-              title="Edit contact"
-            >
-              <Edit2 size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
       <div style={styles.content}>
         {error && (
           <div style={styles.error}>{error}</div>
@@ -264,8 +268,18 @@ export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpd
                 <User size={14} style={styles.fieldIcon} />
                 Name
               </div>
-              <div style={styles.fieldValue}>
-                {personName}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingLeft: '20px' }}>
+                <span style={styles.fieldValue}>{personName}</span>
+                {webUrl && (
+                  <a
+                    href={webUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={styles.inlineViewLink}
+                  >
+                    View →
+                  </a>
+                )}
               </div>
             </div>
 
@@ -274,7 +288,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpd
                 <Mail size={14} style={styles.fieldIcon} />
                 Email
               </div>
-              <div style={styles.fieldValue}>
+              <div style={{ ...styles.fieldValue, paddingLeft: '20px' }}>
                 {email}
               </div>
             </div>
@@ -285,7 +299,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpd
                   <Phone size={14} style={styles.fieldIcon} />
                   Phone
                 </div>
-                <div style={styles.fieldValue}>
+                <div style={{ ...styles.fieldValue, paddingLeft: '20px' }}>
                   {phone}
                 </div>
               </div>
@@ -297,7 +311,7 @@ export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpd
                   <Briefcase size={14} style={styles.fieldIcon} />
                   Job Title
                 </div>
-                <div style={styles.fieldValue}>
+                <div style={{ ...styles.fieldValue, paddingLeft: '20px' }}>
                   {jobTitle}
                 </div>
               </div>
@@ -308,34 +322,46 @@ export const PersonCard: React.FC<PersonCardProps> = ({ person, companies, onUpd
                 <Building2 size={14} style={styles.fieldIcon} />
                 Organization
               </div>
-              <div style={styles.fieldValue}>
+              <div style={{ ...styles.fieldValue, paddingLeft: '20px' }}>
                 {companyId ? (
                   <span>
-                    {companies.find(c => c.id.record_id === companyId)?.values?.name?.[0]?.value || 'Linked to company'}
+                    {getCompanyName(person, company, companies)}
                   </span>
                 ) : (
                   <span style={styles.emptyValue}>No organization</span>
                 )}
               </div>
             </div>
-
-            {webUrl && (
-              <a
-                href={webUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={styles.linkButton}
-              >
-                <ExternalLink size={14} />
-                <span>View in Attio</span>
-              </a>
-            )}
           </>
         )}
       </div>
     </div>
   );
-};
+});
+
+// Export helper function to render edit button for accordion header
+export const PersonCardEditButton = ({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      background: 'none',
+      border: 'none',
+      padding: '4px',
+      cursor: disabled ? 'default' : 'pointer',
+      color: 'var(--text-secondary)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '4px',
+      transition: 'background-color 0.2s',
+      opacity: disabled ? 0.5 : 1,
+    }}
+    title="Edit contact"
+  >
+    <Edit2 size={16} />
+  </button>
+);
 
 const styles: Record<string, React.CSSProperties> = {
   card: {
@@ -402,7 +428,12 @@ const styles: Record<string, React.CSSProperties> = {
   fieldValue: {
     fontSize: '14px',
     color: 'var(--text-primary)',
-    paddingLeft: '20px',
+  },
+  inlineViewLink: {
+    fontSize: '12px',
+    color: 'var(--accent-color)',
+    textDecoration: 'none',
+    fontWeight: 500,
   },
   emptyValue: {
     color: 'var(--text-tertiary)',
